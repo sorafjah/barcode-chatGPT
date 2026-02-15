@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>100均レジ</title>
+
+  <!--
+    html5-qrcode がCDNブロック/読み込み失敗した場合でも、
+    「起動ボタンを押したタイミング」で複数CDNから再試行する。
+    （Safari/iOSの権限制約とも相性が良い）
+  -->
+  <script>
+    (function(){
+      // 既に読み込まれているなら何もしない
+      if (window.Html5Qrcode) return;
+
+      // まずは通常の <script src> と同等に1回だけ読み込みを試す（早めに準備）
+      const primary = "https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js";
+      const s = document.createElement('script');
+      s.src = primary;
+      s.async = true;
+      s.crossOrigin = "anonymous";
+      // 失敗してもここでは何もしない（起動ボタン押下時にフォールバック再試行）
+      document.head.appendChild(s);
+    })();
+  </script>
+
+  <style>
+    :root{
+      --pad: 16px;
+      --radius: 18px;
+      --shadow: 0 8px 24px rgba(0,0,0,.12);
+    }
+    *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+    html, body{ height:100%; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+      background:#fff;
+      color:#000;
+      overflow:hidden;
+    }
+
+    .app{
+      height:100%;
+      display:flex;
+      flex-direction:column;
+      padding: max(env(safe-area-inset-top), 0px) var(--pad) max(env(safe-area-inset-bottom), 0px) var(--pad);
+      gap: 12px;
+    }
+
+    .top{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .card{
+      border: 3px solid #000;
+      border-radius: var(--radius);
+      padding: 14px;
+      background:#fff;
+      box-shadow: var(--shadow);
+    }
+    .label{ font-size: 20px; font-weight: 800; }
+    .big{
+      font-size: clamp(44px, 7vw, 80px);
+      font-weight: 1000;
+      line-height: 1.05;
+      margin-top: 6px;
+      letter-spacing: .5px;
+    }
+
+    .scan-area{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+      min-height: 0;
+    }
+
+    #readerWrap{
+      flex:1;
+      border: 3px solid #000;
+      border-radius: var(--radius);
+      overflow:hidden;
+      background:#fff;
+      box-shadow: var(--shadow);
+      min-height: 0;
+      position:relative;
+    }
+
+    #reader{
+      width:100%;
+      height:100%;
+    }
+
+    .meta{
+      border: 3px solid #000;
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background:#fff;
+      box-shadow: var(--shadow);
+      display:flex;
+      flex-direction:column;
+      gap: 6px;
+    }
+
+    .product{
+      font-size: 28px;
+      font-weight: 1000;
+    }
+    .jan{
+      font-size: 14px;
+      font-weight: 700;
+      opacity: .85;
+      word-break: break-all;
+    }
+
+    .buttons{
+      display:flex;
+      flex-direction:column;
+      gap: 10px;
+    }
+
+    button{
+      width:100%;
+      border: 3px solid #000;
+      border-radius: 18px;
+      padding: 18px 16px;
+      font-size: 30px;
+      font-weight: 1000;
+      cursor:pointer;
+      box-shadow: var(--shadow);
+      background:#fff;
+      color:#000;
+      touch-action: manipulation;
+    }
+
+    .btn-start{ background:#00d084; }
+    .btn-pay{ background:#ffeb3b; }
+    .btn-reset{ background:#ff3b30; color:#fff; }
+
+    .hint{
+      font-size: 14px;
+      font-weight: 700;
+      opacity: .9;
+      line-height: 1.4;
+      text-align:center;
+      padding-bottom: 6px;
+    }
+
+    /* Overlay */
+    .overlay{
+      position:fixed;
+      inset:0;
+      background: rgba(255,255,255,.96);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      flex-direction:column;
+      gap: 18px;
+      padding: 20px;
+      z-index: 50;
+    }
+    .overlay.show{ display:flex; }
+    .overlay .totalText{
+      font-size: clamp(52px, 9vw, 110px);
+      font-weight: 1000;
+      border: 5px solid #000;
+      border-radius: 24px;
+      padding: 18px 22px;
+      box-shadow: var(--shadow);
+      background:#fff;
+      text-align:center;
+      line-height: 1.1;
+    }
+
+    /* Start gate */
+    .gate{
+      position:fixed;
+      inset:0;
+      background:#fff;
+      z-index: 100;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 20px;
+    }
+    .gate .panel{
+      width:min(680px, 100%);
+      border: 5px solid #000;
+      border-radius: 26px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+    .gate h1{
+      margin: 0 0 10px 0;
+      font-size: 34px;
+      font-weight: 1000;
+    }
+    .gate p{
+      margin: 0 0 14px 0;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.5;
+    }
+
+    .status{
+      font-size: 14px;
+      font-weight: 800;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 3px solid #000;
+      border-radius: 14px;
+      background:#fff;
+      white-space: pre-wrap;
+    }
+
+    @media (prefers-reduced-motion: reduce){
+      *{ scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="gate" id="gate">
+    <div class="panel">
+      <h1>100均レジ</h1>
+      <p>
+        最初に <b>「レジをはじめる」</b> を押すと、<b>カメラ</b> と <b>音</b> の許可を取ってスキャンを開始します。<br>
+        ※ iPhone/iPad は最初のボタン操作が必要です。
+      </p>
+      <button class="btn-start" id="btnStart">レジをはじめる</button>
+      <div class="status" id="gateStatus">待機中</div>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="totalText" id="payTotal">合計 0円</div>
+    <button class="btn-reset" id="btnReset2">つぎの人（リセット）</button>
+  </div>
+
+  <div class="app" aria-label="100均レジアプリ">
+    <div class="top">
+      <div class="card">
+        <div class="label">合計金額</div>
+        <div class="big" id="sum">0円</div>
+      </div>
+      <div class="card">
+        <div class="label">スキャン個数</div>
+        <div class="big" id="count">0個</div>
+      </div>
+    </div>
+
+    <div class="scan-area">
+      <div id="readerWrap">
+        <div id="reader"></div>
+      </div>
+
+      <div class="meta">
+        <div class="product">100円ショップの商品</div>
+        <div class="jan">JAN: <span id="jan">---</span></div>
+      </div>
+
+      <div class="buttons">
+        <button class="btn-pay" id="btnPay" disabled>お支払い</button>
+        <button class="btn-reset" id="btnReset" disabled>つぎの人（リセット）</button>
+      </div>
+
+      <div class="hint" id="hint">スキャン待機中…</div>
+    </div>
+  </div>
+
+  <script>
+    // ================================
+    // 目的の確認（仕様が曖昧な点の確認）
+    // ================================
+    // Q: 「お支払い」画面のときに、
+    //    - JANコード表示は消える？残す？
+    //    - そのまま合計だけ大きく出す（現実のレジっぽく）でOK？
+    // 現在は「合計だけ」を中央に大きく表示する実装です。
+
+    // ================================
+    // 設定
+    // ================================
+    const PRICE = 110; // 110円固定
+
+    // ================================
+    // 状態
+    // ================================
+    let total = 0;
+    let scanned = 0;
+    let lastJan = "";
+    let lastScanAt = 0;
+
+    let audioCtx = null;
+    let qr = null;
+    let scanning = false;
+
+    const elSum = document.getElementById('sum');
+    const elCount = document.getElementById('count');
+    const elJan = document.getElementById('jan');
+    const elHint = document.getElementById('hint');
+
+    const gate = document.getElementById('gate');
+    const gateStatus = document.getElementById('gateStatus');
+
+    const btnStart = document.getElementById('btnStart');
+    const btnPay = document.getElementById('btnPay');
+    const btnReset = document.getElementById('btnReset');
+    const btnReset2 = document.getElementById('btnReset2');
+
+    const overlay = document.getElementById('overlay');
+    const payTotal = document.getElementById('payTotal');
+
+    // ================================
+    // html5-qrcode ローダー（複数CDNで再試行）
+    // ================================
+    function loadScript(src){
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.crossOrigin = 'anonymous';
+        s.onload = () => resolve(true);
+        s.onerror = () => reject(new Error('failed to load: ' + src));
+        document.head.appendChild(s);
+      });
+    }
+
+    async function ensureHtml5QrcodeLoaded(){
+      if (window.Html5Qrcode) return true;
+
+      // よくあるCDNを順番に試す
+      const candidates = [
+        'https://unpkg.com/html5-qrcode@2.3.10/html5-qrcode.min.js',
+        'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/minified/html5-qrcode.min.js',
+        'https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.10/html5-qrcode.min.js'
+      ];
+
+      let lastErr = null;
+      for (const src of candidates) {
+        try {
+          await loadScript(src);
+          if (window.Html5Qrcode) return true;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      // ここまで来たら読み込み不可
+      console.error(lastErr);
+      return false;
+    }
+
+    // ================================
+    // UI更新
+    // ================================
+    function updateUI(){
+      elSum.textContent = `${total}円`;
+      elCount.textContent = `${scanned}個`;
+      elJan.textContent = lastJan ? lastJan : '---';
+
+      const hasAny = scanned > 0;
+      btnPay.disabled = !scanning || !hasAny;
+      // リセットはいつでも押せる（授業利用の安全優先）
+      btnReset.disabled = false;
+    }
+
+    function setHint(text){
+      elHint.textContent = text;
+    }
+
+    // ================================
+    // ピッ音 (Web Audio)
+    // ================================
+    function ensureAudio(){
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = AC ? new AC() : null;
+      }
+    }
+
+    async function beep(){
+      ensureAudio();
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') {
+        try { await audioCtx.resume(); } catch(e) {}
+      }
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.value = 1760;
+      gain.gain.value = 0.0001;
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      const now = audioCtx.currentTime;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.35, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.10);
+
+      osc.start(now);
+      osc.stop(now + 0.12);
+    }
+
+    // ================================
+    // 読み上げ (Web Speech)
+    // ================================
+    function speak110(){
+      const synth = window.speechSynthesis;
+      if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;
+
+      try { synth.cancel(); } catch(e) {}
+
+      const u = new SpeechSynthesisUtterance('ひゃくじゅうえん');
+      u.lang = 'ja-JP';
+      u.rate = 1.0;
+      u.pitch = 1.0;
+      u.volume = 1.0;
+
+      const voices = synth.getVoices ? synth.getVoices() : [];
+      const ja = voices.find(v => (v.lang || '').toLowerCase().startsWith('ja'));
+      if (ja) u.voice = ja;
+
+      try { synth.speak(u); } catch(e) {}
+    }
+
+    function warmVoices(){
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      if (typeof synth.getVoices === 'function') synth.getVoices();
+    }
+
+    // ================================
+    // スキャン処理
+    // ================================
+    function isValidJan(text){
+      return /^\d{8,14}$/.test(text);
+    }
+
+    function extractDigits(decodedText){
+      return (String(decodedText).match(/\d+/g) || []).join('');
+    }
+
+    async function startScanner(){
+      if (scanning) return;
+      setHint('カメラ起動中…');
+
+      // ★ ここで必ず Html5Qrcode の存在を確認
+      const ok = await ensureHtml5QrcodeLoaded();
+      if (!ok) {
+        scanning = false;
+        setHint('ライブラリ読み込みに失敗しました。\nネットワーク制限がある環境ではCDNがブロックされることがあります。');
+        gateStatus.textContent = 'html5-qrcode が読み込めませんでした。\n(ネットワーク制限/広告ブロック等)';
+        throw new Error('Html5Qrcode is not defined (library not loaded)');
+      }
+
+      if (!qr) qr = new window.Html5Qrcode('reader');
+
+      const config = {
+        fps: 12,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const min = Math.min(viewfinderWidth, viewfinderHeight);
+          const size = Math.floor(min * 0.72);
+          return { width: size, height: size };
+        },
+        rememberLastUsedCamera: true,
+        aspectRatio: 1.0,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+      };
+
+      const cameraConstraints = { facingMode: { ideal: 'environment' } };
+
+      try {
+        await qr.start(
+          cameraConstraints,
+          config,
+          onScanSuccess,
+          () => {}
+        );
+        scanning = true;
+        setHint('スキャン待機中…');
+      } catch (err) {
+        scanning = false;
+        setHint('カメラが使えません。ブラウザの権限を確認してください。');
+        throw err;
+      } finally {
+        updateUI();
+      }
+    }
+
+    async function stopScanner(){
+      if (!qr || !scanning) return;
+      setHint('停止中…');
+      try {
+        await qr.stop();
+        await qr.clear();
+      } catch(e) {}
+      scanning = false;
+      setHint('停止しました');
+      updateUI();
+    }
+
+    function onScanSuccess(decodedText){
+      const now = Date.now();
+
+      const digits = extractDigits(decodedText);
+      if (!digits) return;
+      if (!isValidJan(digits)) return;
+
+      if (digits === lastJan && (now - lastScanAt) < 900) return;
+
+      lastJan = digits;
+      lastScanAt = now;
+
+      scanned += 1;
+      total += PRICE;
+      updateUI();
+
+      beep();
+      setTimeout(() => speak110(), 120);
+
+      setHint('スキャンしました！');
+      setTimeout(() => {
+        if (scanning) setHint('スキャン待機中…');
+      }, 600);
+    }
+
+    // ================================
+    // お支払いフロー
+    // ================================
+    async function pay(){
+      await stopScanner();
+      payTotal.textContent = `合計 ${total}円`;
+      overlay.classList.add('show');
+      updateUI();
+    }
+
+    async function resetAll(){
+      overlay.classList.remove('show');
+      total = 0;
+      scanned = 0;
+      lastJan = '';
+      lastScanAt = 0;
+      updateUI();
+      setHint('スキャン待機中…');
+      try {
+        await startScanner();
+      } catch(e) {
+        // 起動できない場合はゲートにメッセージを残す
+      }
+    }
+
+    // ================================
+    // 簡易テスト（UIに影響しない）
+    // ================================
+    function runSelfTests(){
+      const tests = [];
+      const assert = (name, cond) => tests.push({ name, pass: !!cond });
+
+      assert('isValidJan 13桁OK', isValidJan('4901234567890') === true);
+      assert('isValidJan 8桁OK', isValidJan('12345678') === true);
+      assert('isValidJan 7桁NG', isValidJan('1234567') === false);
+      assert('isValidJan 15桁NG', isValidJan('123456789012345') === false);
+      assert('extractDigits 数字抽出', extractDigits('JAN: 4901234567890') === '4901234567890');
+      assert('extractDigits 混在でも連結', extractDigits('49-0123 456 7890') === '4901234567890');
+
+      const failed = tests.filter(t => !t.pass);
+      if (failed.length) {
+        console.warn('SelfTests FAILED', failed);
+      } else {
+        console.log('SelfTests OK', tests.length);
+      }
+    }
+    runSelfTests();
+
+    // ================================
+    // 開始ゲート (最初のユーザー操作で権限を得る)
+    // ================================
+    btnStart.addEventListener('click', async () => {
+      gateStatus.textContent = '準備中…';
+      btnStart.disabled = true;
+      btnStart.textContent = '準備中…';
+
+      try {
+        ensureAudio();
+        warmVoices();
+        await beep();
+
+        // ここでライブラリの読み込みも確実にする
+        const ok = await ensureHtml5QrcodeLoaded();
+        if (!ok) {
+          gateStatus.textContent = 'html5-qrcode を読み込めませんでした。\nネットワーク制限/広告ブロック等を確認してください。';
+          btnStart.disabled = false;
+          btnStart.textContent = 'レジをはじめる';
+          return;
+        }
+
+        await startScanner();
+        gate.style.display = 'none';
+        setHint('スキャン待機中…');
+      } catch (e) {
+        console.error(e);
+        gateStatus.textContent = '開始できませんでした。\n・カメラ権限\n・ネットワーク制限（CDNブロック）\nを確認してください。';
+        btnStart.disabled = false;
+        btnStart.textContent = 'レジをはじめる';
+      }
+    }, { passive: true });
+
+    btnPay.addEventListener('click', () => {
+      if (scanned <= 0) return;
+      pay();
+    }, { passive: true });
+
+    btnReset.addEventListener('click', () => {
+      resetAll();
+    }, { passive: true });
+
+    btnReset2.addEventListener('click', () => {
+      resetAll();
+    }, { passive: true });
+
+    // 初期表示
+    updateUI();
+  </script>
+</body>
+</html>
